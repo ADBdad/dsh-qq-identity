@@ -1,11 +1,12 @@
 # dsh-qq-identity
 
 > QQ 身份自动注入插件 —— 让 AI 在 QQ 里知道自己是谁、对面是谁。
-> 基于 [OneBot 11](https://github.com/botuniverse/onebot-11) / [SnowLuma](https://snowluma.com)。纯只读、零新增依赖。
+> 基于 [OneBot 11](https://github.com/botuniverse/onebot-11) / [SnowLuma](https://snowluma.com)。纯只读、零依赖、297 行。
 
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![node](https://img.shields.io/badge/node-%3E%3D18-green.svg)](https://nodejs.org)
 [![dsh](https://img.shields.io/badge/DSH-0.2.x-blueviolet.svg)](https://github.com/deepseek-ai/deepseek-harness)
+[![deps](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](package.json)
 
 现成的 QQ 插件几乎都是「工具型」：AI 想知道自己的群名片、是不是管理员、对面是谁，得**主动调一次工具**。多数时候它根本不会想到去调，于是群里被问「你是管理员吗」只能瞎猜。
 
@@ -13,13 +14,13 @@
 
 ```
 群聊 · 注入的是「她自己」
-【你的群内身份】你在群里的身份：测试名片（QQ 10001000），管理员，头衔「群管」
+【你的群内身份】群「测试群」，42 人。你在群里的身份：测试名片（QQ 10001000），管理员，头衔「群管」
 
 私聊 · 注入的是「对方」
-【私聊对象】对方 QQ 20002000，你备注为「测试备注」，是你的好友
+【私聊对象】你自己是 测试机器人（QQ 10001000）。对方 QQ 20002000，你备注为「测试备注」，是你的好友
 ```
 
-不发消息、不改群、不写文件。只有 3 次只读查询（`get_login_info` / `get_group_member_info` / `get_friend_list` + `get_stranger_info`）。
+不发消息、不改群、不写文件。只有 5 个只读 action（`get_login_info` / `get_group_info` / `get_group_member_info` / `get_friend_list` / `get_stranger_info`）。
 
 ## 它解决什么
 
@@ -27,6 +28,7 @@
 |---|---|---|
 | 群里有人问「你是管理员吗」 | 靠猜，或调工具才发现 | 直接知道 |
 | 群友给她改了个花名 | 一直以为自己是昵称 | 知道群名片与昵称是两回事 |
+| 群里有几个熟人 | 只看到群号 | 知道群名、多少人 |
 | 私聊里对方改了备注 | 只看到 QQ 号 | 知道备注是「测试备注」，是你的好友 |
 | 陌生人加好友私聊 | 当成熟人对待 | 知道「不是你的好友」 |
 
@@ -112,9 +114,11 @@ system-prompt/assemble（async waterfall）
    ↓  查 sessionMapFile → "group:30003000"
    ↓  正则 → 群号 30003000
    ↓
-OneBot: get_login_info → 10001000
-        get_group_member_info(30003000, 10001000)
-        → { card: "测试名片", role: "admin", title: "群管" }
+OneBot（并发发出，互不阻塞）:
+  get_login_info                    → { user_id: 10001000, nickname: "测试机器人" }
+  get_group_info(30003000)         → { group_name: "测试群", member_count: 42 }
+  get_group_member_info(30003000, 10001000)
+                                    → { card: "测试名片", role: "admin", title: "群管" }
    ↓
 拼成 context { name: "qq-identity", text: "【你的群内身份】…", interpolate: false }
    ↓
@@ -125,7 +129,7 @@ OneBot: get_login_info → 10001000
 
 1. **用 async waterfall，不用 `systemPrompt.variable()`**。后者的 provider 是同步求值的，没法在里边 await OneBot 查询。waterfall 可以。
 2. **context 标 `required: true`**。宿主或某个 preset 若设了 `includeRuntimeContext: false`（`dsh-persona` 支持这个开关），非 required 的 context 会被整批过滤掉，注入静默消失。
-3. **只读 + 失败静默**。任何一次查询失败都返回空串，绝不让「查身份」打断对话。
+3. **只读 + 失败静默 + 并发**。任何一次查询失败都返回空串，绝不让「查身份」打断对话；群名与成员名片用 `Promise.all` 并发，首轮 3 次往返压成 1 轮，之后 `ttlMs` 内零请求。
 
 ## 兼容
 
@@ -133,22 +137,26 @@ OneBot: get_login_info → 10001000
 | --- | --- |
 | DSH | 0.2.x |
 | Node | ≥ 18（用原生 fetch） |
-| OneBot 11 | SnowLuma、NapCat、go-cqhttp 等（需支持下面 4 个 action） |
+| OneBot 11 | SnowLuma、NapCat、go-cqhttp 等（需支持下面 5 个 action） |
 | 平台 | Windows / Linux / macOS（无平台相关代码） |
 
-依赖的 4 个只读 action：
+依赖的 5 个只读 action：
 
-- `get_login_info` —— 拿自己的 QQ 号
+- `get_login_info` —— 拿自己的 QQ 号和昵称
+- `get_group_info` —— 群名 / 群人数
 - `get_group_member_info` —— 群名片 / 角色 / 头衔
 - `get_friend_list` —— 判断是否好友 + 拿备注
 - `get_stranger_info` —— 拿陌生人昵称
+
+> `get_group_info` 缺失时插件不报错，只是注入里没有群名和人数——其余照常。
 
 会话 id 格式由桥接约定。默认按 `group:N` / `private:N` 解析，其它桥接改正则或填 `sessionMapFile` 即可。
 
 ## 测试
 
 ```bash
-node test/smoke.mjs   # 身份解析（假 OneBot 服务，11 项）
+npm test              # 两个都跑
+node test/smoke.mjs   # 身份解析（假 OneBot 服务，17 项）
 node test/hook.mjs    # context 注册 + assemble 注入（18 项）
 ```
 
@@ -179,6 +187,10 @@ node test/hook.mjs    # context 注册 + assemble 注入（18 项）
 curl -s -X POST http://127.0.0.1:3000/get_login_info -H 'content-type: application/json' -d '{}'
 ```
 
+**注入里没有群名 / 群人数**
+
+协议端不支持 `get_group_info`，或该 action 报错。插件会静默跳过，其余字段照常注入。
+
 **群名片对，但角色说「角色未知」**
 
 协议端返回的 `role` 不是 `owner`/`admin`/`member` 三者之一。插件不会编造，如实写「角色未知」。
@@ -193,6 +205,15 @@ curl -s -X POST http://127.0.0.1:3000/get_login_info -H 'content-type: applicati
 - **不做记忆**。它只回答「此刻的身份是什么」，不记录历史、不做画像。要记人的插件是另一个方向。
 - **不替代工具**。想查群成员列表、历史消息、群荣誉这些，仍然需要工具型插件（如 `dsh-qq-tools`）。本插件只管身份。
 - **不含设置页**。配置就一个 JSON 文件，改完即生效。
+- **不注入群友名单**。群里几十上百人，每轮都塞进提示词是浪费 token 且易漂移。要知道「谁在群里」请用工具查。
+
+## 体积
+
+| 部分 | 行数 | 字节 |
+| --- | --- | --- |
+| `lib/` 四个文件 | 约 300 | 约 13 KB |
+| 运行依赖 | **0** | — |
+| 发布内容 | lib + patch + README + LICENSE | 约 30 KB |
 
 ## License
 

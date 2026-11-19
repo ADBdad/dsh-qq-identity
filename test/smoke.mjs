@@ -19,6 +19,7 @@ const server = http.createServer((req, res) => {
     let data = {}
     if (req.url === '/get_login_info') data = { user_id: 10001000, nickname: '测试机器人' }
     else if (req.url === '/get_group_member_info') data = { card: '测试名片', nickname: '测试机器人', role: 'admin', title: '群管' }
+    else if (req.url === '/get_group_info') data = { group_id: 30003000, group_name: '测试群', member_count: 42 }
     else if (req.url === '/get_friend_list') data = { friends: [{ user_id: 20002000, nickname: '测试备注', remark: '测试备注' }] }
     else if (req.url === '/get_stranger_info') data = { user_id: 999, nickname: '路人甲' }
     res.writeHead(200, { 'content-type': 'application/json' })
@@ -67,13 +68,19 @@ console.log('  -> ' + g)
 check('群聊含群名片', g.includes('测试名片'), g)
 check('群聊含管理员', g.includes('管理员'), g)
 check('群聊含头衔', g.includes('群管'), g)
+check('群聊含群名', g.includes('测试群'), g)
+check('群聊含群人数', g.includes('42 人'), g)
 check('群聊调用 get_group_member_info', seen.some((s) => s.url === '/get_group_member_info'))
+check('群聊调用 get_group_info', seen.some((s) => s.url === '/get_group_info'))
 
 console.log('== 私聊身份注入（好友）==')
 const p1 = await identityText('private:20002000')
 console.log('  -> ' + p1)
 check('私聊含备注', p1.includes('测试备注'), p1)
 check('私聊含"是你的好友"', p1.includes('是你的好友'), p1)
+check('私聊含对方QQ', p1.includes('20002000'), p1)
+check('私聊含自己的昵称', p1.includes('测试机器人'), p1)
+check('私聊含自己的QQ', p1.includes('10001000'), p1)
 
 console.log('== 私聊身份注入（陌生人）==')
 const p2 = await identityText('private:999')
