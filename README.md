@@ -1,17 +1,36 @@
 # dsh-qq-identity
 
-QQ 身份自动注入插件（DSH / OneBot 11 / SnowLuma）
+> QQ 身份自动注入插件 —— 让 AI 在 QQ 里知道自己是谁、对面是谁。
+> 基于 [OneBot 11](https://github.com/botuniverse/onebot-11) / [SnowLuma](https://snowluma.com)。纯只读、零新增依赖。
+
+[![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![node](https://img.shields.io/badge/node-%3E%3D18-green.svg)](https://nodejs.org)
+[![dsh](https://img.shields.io/badge/DSH-0.2.x-blueviolet.svg)](https://github.com/deepseek-ai/deepseek-harness)
+
+现成的 QQ 插件几乎都是「工具型」：AI 想知道自己的群名片、是不是管理员、对面是谁，得**主动调一次工具**。多数时候它根本不会想到去调，于是群里被问「你是管理员吗」只能瞎猜。
+
+这个插件反过来——**每轮对话开始前，身份已经在提示词里了**：
+
+```
+群聊 · 注入的是「她自己」
+【你的群内身份】你在群里的身份：测试名片（QQ 10001000），管理员，头衔「群管」
+
+私聊 · 注入的是「对方」
+【私聊对象】对方 QQ 20002000，你备注为「测试备注」，是你的好友
+```
+
+不发消息、不改群、不写文件。只有 3 次只读查询（`get_login_info` / `get_group_member_info` / `get_friend_list` + `get_stranger_info`）。
 
 ## 它解决什么
 
-现成的 QQ 插件都是「工具型」——AI 想直到群名片、自己是不是管理员时，得主动调一次 `qq_get_group_members`。本插件反过来：**每轮对话自动把身份注入提示词，AI 无需调用任何工具就知道**。
+| 场景 | 没有本插件 | 有本插件 |
+|---|---|---|
+| 群里有人问「你是管理员吗」 | 靠猜，或调工具才发现 | 直接知道 |
+| 群友给她改了个花名 | 一直以为自己是昵称 | 知道群名片与昵称是两回事 |
+| 私聊里对方改了备注 | 只看到 QQ 号 | 知道备注是「测试备注」，是你的好友 |
+| 陌生人加好友私聊 | 当成熟人对待 | 知道「不是你的好友」 |
 
-注入两类：
-
-- **群聊**：她在群里的名片、是不是群主/管理员、头衔。
-- **私聊**：对方昵称、你给对方的备注、是不是好友。
-
-纯只读 + 纯注入，不发消息、不改群、零新增依赖。
+身份是**每轮都成立的事实**，不该指望模型每次想起来去查。这就是本插件存在的理由。
 
 ## 安装
 
@@ -19,11 +38,15 @@ QQ 身份自动注入插件（DSH / OneBot 11 / SnowLuma）
 dsh plugin --profile web add github:ADBdad/dsh-qq-identity
 ```
 
-装完在插件页启用 `QQ 身份注入` 组件即可。
+装完重启一次引擎。插件没有任何设置页，全部走配置文件。
+
+**前置条件**：已经有一个跑着的 OneBot 11 HTTP 服务端（SnowLuma / NapCat / go-cqhttp 等）。插件不读 QQ 密码，只跟协议端说话。
+
+> 配置存在 `~/.dsh/qq-identity-config.json`，**不在插件目录里** —— 重装插件不会丢。
 
 ## 配置
 
-配置文件：`~/.dsh/qq-identity-config.json`（首次启动自动生成，不在插件目录，pnpm 重装不会丢）。
+文件路径：`~/.dsh/qq-identity-config.json`（首次启动自动生成一份默认配置，直接改即可）
 
 ```json
 {
@@ -35,45 +58,141 @@ dsh plugin --profile web add github:ADBdad/dsh-qq-identity
   "enablePrivate": true,
   "groupPattern": "^group:(\\d+)$",
   "privatePattern": "^private:(\\d+)$",
-  "ownerQQ": "",
   "sessionMapFile": "",
   "debug": false
 }
 ```
 
-- `baseUrl` / `accessToken`：SnowLuma（或任意 OneBot 11 HTTP 实现）地址与 token。DSH 与 SnowLuma 同一台机时默认 `http://127.0.0.1:3000` 即可，token 留空。
-- `ttlMs`：身份缓存时间，默认 60 秒。设 0 则每轮都查。
-- `enableGroup` / `enablePrivate`：分别开关群聊/私聊注入。
-- `groupPattern` / `privatePattern`：会话 id 到群号/QQ 号的正则，**第一个捕获组是号码**。默认匹配 `group:群号` / `private:QQ号` 这种格式。如果用别的桥接，改这里。
-- `sessionMapFile`：把 DSH 内部 sessionId（`session-xxx`）反查成 `group:N`/`private:N` 的映射文件（某些桥接落在自己的 state 目录下）。如果你的桥接直接把会话 id 设成 `group:N`/`private:N`，留空即可；否则填上映射文件路径。
-- `debug`：调试日志开关，默认 `false`。
+| 键 | 默认 | 说明 |
+| --- | --- | --- |
+| `baseUrl` | `http://127.0.0.1:3000` | OneBot HTTP 地址。DSH 与协议端同机时默认值即可 |
+| `accessToken` | 空 | OneBot 的 `Authorization: Bearer` token；协议端没设就留空 |
+| `timeoutMs` | `6000` | 单次查询超时（毫秒），范围 500–60000 |
+| `ttlMs` | `60000` | 身份缓存时间。**设 `0` 表示每轮都现查**（不缓存） |
+| `enableGroup` | `true` | 群聊注入开关 |
+| `enablePrivate` | `true` | 私聊注入开关 |
+| `groupPattern` | `^group:(\d+)$` | 会话 id → 群号。第一个捕获组是号码 |
+| `privatePattern` | `^private:(\d+)$` | 会话 id → QQ 号。同上 |
+| `sessionMapFile` | 空 | sessionId 反查表（见下节）。桥接直接用 `group:N` 时留空即可 |
+| `debug` | `false` | 打开后每轮往 stdout 打一行调试日志 |
 
-改完配置下轮生效，无需重启（配置有 mtime 缓存检测）。
+改完配置**下轮立即生效**，不用重启（按文件 mtime 检测）。
+
+### `sessionMapFile` 是干什么的
+
+DSH 给插件的 `agent.id` 是**内部 sessionId**（`session-11111111-…`），不是 `group:30003000`。两者要靠桥接落盘的映射表对上：
+
+```json
+{
+  "sessions": {
+    "group:30003000": "session-11111111-2222-3333-4444-555555555555",
+    "private:20002000": "session-…"
+  }
+}
+```
+
+某些桥接会把这张表落在自己的 state 目录下，填进 `sessionMapFile` 即可：
+
+```json
+{ "sessionMapFile": "<桥接根目录>/state/sessions.json" }
+```
+
+> 如果你的桥接把会话 id 直接设成 `group:N` / `private:N`，留空就行，插件会走正则直连。
+> **这一步没配对的表现是：插件跑着、日志没报错、但提示词里什么都没有。** 排查时先看这里。
 
 ## 工作原理
 
-注册 `system-prompt/assemble` 这个 async waterfall hook。每轮 assemble 时：
+只做一件事：注册 `system-prompt/assemble` 这个异步 waterfall，每轮组装提示词时插一条 context。
 
-1. 从 `context.agent.id` 拿到会话 id；
-2. 若它是 DSH 内部 `session-xxx` 而非 `group:N`/`private:N`，先查 `sessionMapFile` 反查出 QQ 会话 key；
-3. 用正则解析出群号或 QQ 号；
-4. 查 OneBot：`get_login_info` + `get_group_member_info`（群）/ `get_friend_list` + `get_stranger_info`（私聊）；
-5. 拼成一条 `interpolate:false` 的 context 注入（`qq-identity`），并带 TTL 缓存。
+```
+一轮对话开始
+   ↓
+system-prompt/assemble（async waterfall）
+   ↓  context.agent.id = session-xxx
+   ↓  查 sessionMapFile → "group:30003000"
+   ↓  正则 → 群号 30003000
+   ↓
+OneBot: get_login_info → 10001000
+        get_group_member_info(30003000, 10001000)
+        → { card: "测试名片", role: "admin", title: "群管" }
+   ↓
+拼成 context { name: "qq-identity", text: "【你的群内身份】…", interpolate: false }
+   ↓
+进入提示词，模型直接读到
+```
 
-查不到身份时静默返回空串，绝不打断对话。
+三个实现上的取舍，都踩过坑：
+
+1. **用 async waterfall，不用 `systemPrompt.variable()`**。后者的 provider 是同步求值的，没法在里边 await OneBot 查询。waterfall 可以。
+2. **context 标 `required: true`**。宿主或某个 preset 若设了 `includeRuntimeContext: false`（`dsh-persona` 支持这个开关），非 required 的 context 会被整批过滤掉，注入静默消失。
+3. **只读 + 失败静默**。任何一次查询失败都返回空串，绝不让「查身份」打断对话。
 
 ## 兼容
 
-- DSH 0.2.x / Node >= 18
-- OneBot 11 标准 HTTP 接口：SnowLuma、NapCat、go-cqhttp 等（需支持上表 5 个 action）
-- 会话 id 由桥接约定，默认按 `group:N` / `private:N` 解析；其它格式通过正则或 sessionMapFile 适配
+| 项 | 支持 |
+| --- | --- |
+| DSH | 0.2.x |
+| Node | ≥ 18（用原生 fetch） |
+| OneBot 11 | SnowLuma、NapCat、go-cqhttp 等（需支持下面 4 个 action） |
+| 平台 | Windows / Linux / macOS（无平台相关代码） |
+
+依赖的 4 个只读 action：
+
+- `get_login_info` —— 拿自己的 QQ 号
+- `get_group_member_info` —— 群名片 / 角色 / 头衔
+- `get_friend_list` —— 判断是否好友 + 拿备注
+- `get_stranger_info` —— 拿陌生人昵称
+
+会话 id 格式由桥接约定。默认按 `group:N` / `private:N` 解析，其它桥接改正则或填 `sessionMapFile` 即可。
 
 ## 测试
 
 ```bash
-node test/smoke.mjs   # OneBot 身份解析（假服务）
-node test/hook.mjs    # assemble hook 注入逻辑
+node test/smoke.mjs   # 身份解析（假 OneBot 服务，11 项）
+node test/hook.mjs    # context 注册 + assemble 注入（18 项）
 ```
+
+两个都不依赖外部服务，起假 OneBot 在随机端口上跑完就退。
+
+## 排障
+
+**提示词里没有身份**
+
+按顺序查三件事：
+
+1. `~/.dsh/qq-identity-config.json` 的 `debug` 改 `true`，看日志有没有 `[qq-identity] hook fired`
+2. 有 hook 但 `identityText=(空)` —— 十有八九是 `sessionMapFile` 没配或路径不对
+3. 连 hook 都没触发 —— 检查插件是否已启用（插件页），以及宿主是否根本不走 `system-prompt/assemble`
+
+**日志里是 `401 unauthorized`**
+
+`accessToken` 没填或填错。这个 token 是你的 OneBot 协议端启动时配置的那个，去协议端的配置文件或启动参数里找：
+
+```bash
+```
+
+**日志里是 `fetch failed` / `ECONNREFUSED`**
+
+`baseUrl` 不对，或协议端没起。先手工确认：
+
+```bash
+curl -s -X POST http://127.0.0.1:3000/get_login_info -H 'content-type: application/json' -d '{}'
+```
+
+**群名片对，但角色说「角色未知」**
+
+协议端返回的 `role` 不是 `owner`/`admin`/`member` 三者之一。插件不会编造，如实写「角色未知」。
+
+**私聊时什么都不注入**
+
+对方既不在好友列表里、`get_stranger_info` 也拿不到昵称。这种情况插件选择不注入，而不是塞一句「好友状态未知」的废话。
+
+## 边界
+
+- **只读**。不写任何 QQ 数据，不发消息，不改名片，不操作群。
+- **不做记忆**。它只回答「此刻的身份是什么」，不记录历史、不做画像。要记人的插件是另一个方向。
+- **不替代工具**。想查群成员列表、历史消息、群荣誉这些，仍然需要工具型插件（如 `dsh-qq-tools`）。本插件只管身份。
+- **不含设置页**。配置就一个 JSON 文件，改完即生效。
 
 ## License
 
