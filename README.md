@@ -1,7 +1,7 @@
 # dsh-qq-identity
 
 > QQ 身份自动注入插件 —— 让 AI 在 QQ 里知道自己是谁、对面是谁。
-> 基于 [OneBot 11](https://github.com/botuniverse/onebot-11) / [SnowLuma](https://snowluma.com)。纯只读、零依赖、297 行。
+> 基于 [OneBot 11](https://github.com/botuniverse/onebot-11) / [SnowLuma](https://snowluma.com)。纯只读、零依赖、333 行。
 
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![node](https://img.shields.io/badge/node-%3E%3D18-green.svg)](https://nodejs.org)
@@ -211,9 +211,9 @@ curl -s -X POST http://127.0.0.1:3000/get_login_info -H 'content-type: applicati
 
 | 部分 | 行数 | 字节 |
 | --- | --- | --- |
-| `lib/` 四个文件 | 约 300 | 约 13 KB |
+| `lib/` 四个文件 | 333 | 14 KB |
 | 运行依赖 | **0** | — |
-| 发布内容 | lib + patch + README + LICENSE | 约 30 KB |
+| 发布内容 | lib + patch + README + LICENSE | 24.6 KB |
 
 ## License
 
