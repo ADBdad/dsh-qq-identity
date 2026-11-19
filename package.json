@@ -1,0 +1,51 @@
+{
+  "name": "dsh-qq-identity",
+  "version": "0.1.0",
+  "description": "QQ 身份自动注入插件：把「她在群里的名片/是不是管理员」和「私聊对方是谁」在每轮对话时自动注入提示词，AI 不需要主动调工具。基于 OneBot 11 / SnowLuma，只读、零新增依赖。",
+  "type": "module",
+  "main": "lib/index.js",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ADBdad/dsh-qq-identity.git"
+  },
+  "homepage": "https://github.com/ADBdad/dsh-qq-identity#readme",
+  "bugs": {
+    "url": "https://github.com/ADBdad/dsh-qq-identity/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "qq",
+    "onebot",
+    "snowluma",
+    "identity",
+    "prompt-injection"
+  ],
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node test/smoke.mjs && node test/hook.mjs"
+  },
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "compatibility": {
+      "dsh": "0.2.x",
+      "node": ">=18"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

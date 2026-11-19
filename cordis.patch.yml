@@ -1,0 +1,5 @@
+# QQ 身份自动注入：一个组件，无设置页。
+# 挂在 DSH 会话上下文里，每轮 system-prompt/assemble 时按会话 id 注入身份。
+- insert:
+    - id: qq-identity
+      name: 'dsh-qq-identity'
